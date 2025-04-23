@@ -1,8 +1,7 @@
 import requests
 import json
-import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 # 디스코드 Webhook 주소 (환경변수에서 불러옴)
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -26,6 +25,7 @@ LOGIN_HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Referer": "https://library.konkuk.ac.kr/login"
 }
+
 
 def get_access_token():
     response = requests.post(
@@ -60,8 +60,11 @@ def get_seat_data(token):
 
 
 def send_to_discord(filtered_seats):
+    KST = timezone(timedelta(hours=9))
+    now_kst = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
+
     message_lines = [
-        f"📢 **건국대 도서관 좌석 현황 (남은 시간 순)**\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"📢 **건국대 도서관 좌석 현황 (남은 시간 순)**\n🕒 {now_kst}"
     ]
     for seat in filtered_seats:
         status = "사용 중" if seat['isOccupied'] else "비어 있음"
@@ -76,45 +79,40 @@ def send_to_discord(filtered_seats):
         "Content-Type": "application/json"
     })
     if response.status_code == 204:
-        print("✅ 디스코드 전송 완료:", datetime.now())
+        print("✅ 디스코드 전송 완료:", now_kst)
     else:
         print("❌ 디스코드 전송 실패:", response.status_code)
 
 
-def run_monitor():
-    while True:
-        print("⏳ 데이터 수집 중...")
+def run_monitor_once():
+    print("⏳ 데이터 수집 중...")
 
-        token = get_access_token()
-        if not token:
-            print("❌ 로그인 실패, 1분 후 재시도")
-            time.sleep(60)
+    token = get_access_token()
+    if not token:
+        print("❌ 로그인 실패")
+        return
+
+    seat_list = get_seat_data(token)
+    filtered = []
+
+    for seat in seat_list:
+        code_str = seat.get("code")
+        if not code_str or not code_str.isdigit():
             continue
+        code = int(code_str)
+        if code in TARGET_SEAT_CODES:
+            filtered.append({
+                "code": code,
+                "isOccupied": seat.get("isOccupied", False),
+                "remaining": seat.get("remainingTime", 0),
+                "total": seat.get("chargeTime", 0)
+            })
 
-        seat_list = get_seat_data(token)
-        filtered = []
-
-        for seat in seat_list:
-            code_str = seat.get("code")
-            if not code_str or not code_str.isdigit():
-                continue
-            code = int(code_str)
-            if code in TARGET_SEAT_CODES:
-                filtered.append({
-                    "code": code,
-                    "isOccupied": seat.get("isOccupied", False),
-                    "remaining": seat.get("remainingTime", 0),
-                    "total": seat.get("chargeTime", 0)
-                })
-
-        # 남은 시간 오름차순 정렬
-        filtered.sort(key=lambda s: s["remaining"])
-        send_to_discord(filtered)
-
-        print("🕐 다음 전송까지 대기 (5분)")
-        time.sleep(300)
+    # 남은 시간 오름차순 정렬
+    filtered.sort(key=lambda s: s["remaining"])
+    send_to_discord(filtered)
 
 
 # 시작
 if __name__ == "__main__":
-    run_monitor()
+    run_monitor_once()
