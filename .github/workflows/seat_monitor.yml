@@ -2,12 +2,16 @@ name: Seat Monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # 매 5분마다 실행 (UTC 기준)
-  workflow_dispatch:       # 수동 실행도 가능하게 설정
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 jobs:
   run-monitor:
     runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      LIBRARY_LOGIN_ID: ${{ secrets.LIBRARY_LOGIN_ID }}
+      LIBRARY_PASSWORD: ${{ secrets.LIBRARY_PASSWORD }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -19,8 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install requests
 
-      - name: Run seat_num.py
+      - name: Run seat monitor script
         run: python seat_num.py
